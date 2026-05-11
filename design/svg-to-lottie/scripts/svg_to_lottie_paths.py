@@ -11,6 +11,8 @@ Usage:
     # returns a list of dicts, one per subpath (compound paths split)
 """
 
+import math
+
 from svgpathtools import parse_path, Line, CubicBezier, QuadraticBezier, Arc
 
 
@@ -34,65 +36,63 @@ def _to_cubic(seg):
 
 
 def _arc_to_cubics(arc, max_angle_deg=90):
-    """Approximate an SVG arc as a series of cubic beziers, ≤90° each."""
-    # svgpathtools Arc has .theta (start) and .delta (sweep) in degrees
-    n = max(1, int(abs(arc.delta) / max_angle_deg) + 1)
+    """Approximate an SVG arc as a series of cubic beziers, ≤90° each.
+
+    Handles elliptical arcs correctly (rx ≠ ry) by sampling the parametric
+    tangent (-rx·sinθ, ry·cosθ) at each sub-arc endpoint — the per-axis
+    radii are encoded in the tangent vector, so scaling by the unitless
+    α = (4/3)·tan(Δ/4) factor yields the correct cubic control offsets.
+    Also honors arc.rotation.
+    """
+    rx, ry = arc.radius.real, arc.radius.imag
+    rot = math.radians(arc.rotation)
+    cos_rot, sin_rot = math.cos(rot), math.sin(rot)
+    cx, cy = arc.center.real, arc.center.imag
+
+    n = max(1, int(math.ceil(abs(arc.delta) / max_angle_deg)))
+    sub_delta_deg = arc.delta / n
+    sub_delta_rad = math.radians(sub_delta_deg)
+    alpha = (4 / 3) * math.tan(sub_delta_rad / 4)
+
+    def ellipse_point(theta_rad):
+        x = rx * math.cos(theta_rad)
+        y = ry * math.sin(theta_rad)
+        return complex(cx + x * cos_rot - y * sin_rot,
+                       cy + x * sin_rot + y * cos_rot)
+
+    def ellipse_tangent(theta_rad):
+        # d/dθ (rx cosθ, ry sinθ) = (-rx sinθ, ry cosθ)
+        tx = -rx * math.sin(theta_rad)
+        ty = ry * math.cos(theta_rad)
+        return complex(tx * cos_rot - ty * sin_rot,
+                       tx * sin_rot + ty * cos_rot)
+
     cubics = []
     for k in range(n):
-        t1 = k / n
-        t2 = (k + 1) / n
-        sub = Arc(
-            start=arc.point(t1),
-            radius=arc.radius,
-            rotation=arc.rotation,
-            large_arc=False,
-            sweep=arc.sweep,
-            end=arc.point(t2),
-            autoscale_radius=False,
-        )
-        # Now sample sub as a cubic via tangent matching at endpoints
-        p0 = sub.point(0)
-        p3 = sub.point(1)
-        # Tangent magnitude for circular arc cubic approximation
-        # Use the standard 4/3 * tan(angle/4) approximation
-        import math
-        angle = math.radians(sub.delta)
-        alpha = (4 / 3) * math.tan(angle / 4)
-        # Rotate tangents
-        d0 = sub.derivative(0)
-        d1 = sub.derivative(1)
-        norm0 = abs(d0)
-        norm1 = abs(d1)
-        if norm0 == 0 or norm1 == 0:
-            cubics.append((p0, p0, p3, p3))
-            continue
-        c1 = p0 + (d0 / norm0) * alpha * abs(sub.radius.real)
-        c2 = p3 - (d1 / norm1) * alpha * abs(sub.radius.real)
+        theta1 = math.radians(arc.theta + k * sub_delta_deg)
+        theta2 = math.radians(arc.theta + (k + 1) * sub_delta_deg)
+        p0 = ellipse_point(theta1)
+        p3 = ellipse_point(theta2)
+        c1 = p0 + alpha * ellipse_tangent(theta1)
+        c2 = p3 - alpha * ellipse_tangent(theta2)
         cubics.append((p0, c1, c2, p3))
     return cubics
 
 
 def _split_into_subpaths(path):
-    """Split a Path on Move commands. Returns list of (segments, closed_bool)."""
-    subpaths = []
-    current = []
-    for seg in path:
-        # svgpathtools doesn't expose Move commands directly — they're implicit
-        # in the start/end of each segment. We detect a new subpath when
-        # the segment's start doesn't match the previous segment's end.
-        if current and abs(current[-1].end - seg.start) > 1e-6:
-            subpaths.append(current)
-            current = []
-        current.append(seg)
-    if current:
-        subpaths.append(current)
+    """Split a Path into continuous subpaths. Returns list of (segments, closed_bool).
 
-    # Determine closed: a subpath is closed if its last segment ends
-    # at the same point as its first segment starts.
+    Uses svgpathtools' canonical Path.continuous_subpaths() for robust
+    splitting (handles edge cases like a moveto that lands on the previous
+    endpoint, which a simple endpoint-distance heuristic gets wrong).
+    """
     result = []
-    for sp in subpaths:
-        closed = abs(sp[-1].end - sp[0].start) < 1e-3
-        result.append((sp, closed))
+    for sub in path.continuous_subpaths():
+        segments = list(sub)
+        if not segments:
+            continue
+        closed = abs(segments[-1].end - segments[0].start) < 1e-3
+        result.append((segments, closed))
     return result
 
 
@@ -159,13 +159,12 @@ def svg_path_to_lottie_shapes(d_attr):
             in_tangents.insert(0, complex(0, 0))
             out_tangents.append(complex(0, 0))
 
-        # Sanity: lengths should match
-        if not (len(vertices) == len(in_tangents) == len(out_tangents)):
-            # Trim to min length to be safe
-            n = min(len(vertices), len(in_tangents), len(out_tangents))
-            vertices = vertices[:n]
-            in_tangents = in_tangents[:n]
-            out_tangents = out_tangents[:n]
+        # Fail loud on length mismatch — silent truncation hides real bugs
+        # in the converter that would otherwise surface as subtly broken icons.
+        assert len(vertices) == len(in_tangents) == len(out_tangents), (
+            f"vertex/tangent length mismatch: "
+            f"v={len(vertices)} i={len(in_tangents)} o={len(out_tangents)}"
+        )
 
         shape = {
             "i": [[t.real, t.imag] for t in in_tangents],

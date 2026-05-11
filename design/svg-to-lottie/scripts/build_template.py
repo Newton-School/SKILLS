@@ -23,8 +23,9 @@ from svg_to_lottie_paths import svg_path_to_lottie_shapes
 
 
 # ─── 1. CONFIG ────────────────────────────────────────────────────────────────
-SVG_PATH = "/mnt/user-data/uploads/your-icon.svg"
+SVG_PATH = "your-icon.svg"  # path to source SVG (override for your environment)
 OUT_NAME = "animation-name"  # kebab-case, no extension
+OUT_DIR = "."                # output directory (CWD by default)
 
 FR = 60
 TOTAL = 110             # total frames; duration = TOTAL/FR seconds
@@ -59,44 +60,8 @@ def hex_to_rgba(hex_str, alpha=1.0):
             int(h[4:6], 16) / 255, alpha]
 
 
-# ─── 3. PARSE SVG → ABSOLUTE COMP COORDINATES ─────────────────────────────────
-tree = ET.parse(SVG_PATH)
-root = tree.getroot()
-ns = {"svg": "http://www.w3.org/2000/svg"}
-vb = list(map(float, root.attrib["viewBox"].split()))
-VB_W, VB_H = vb[2], vb[3]
-
-# Scale icon to fit a chosen fraction of the comp
-ICON_FILL = 0.5  # icon takes 50% of comp width
-SCALE = (COMP_W * ICON_FILL) / VB_W
-COMP_CX, COMP_CY = COMP_W / 2, COMP_H / 2
-ICON_W, ICON_H = VB_W * SCALE, VB_H * SCALE
-OFFSET_X = COMP_CX - ICON_W / 2
-OFFSET_Y = COMP_CY - ICON_H / 2
-
-
-def absolute_path(shape):
-    """Transform converted SVG path into absolute comp coordinates."""
-    return {
-        "i": [[t[0] * SCALE, t[1] * SCALE] for t in shape["i"]],
-        "o": [[t[0] * SCALE, t[1] * SCALE] for t in shape["o"]],
-        "v": [[v[0] * SCALE + OFFSET_X, v[1] * SCALE + OFFSET_Y] for v in shape["v"]],
-        "c": shape["c"],
-    }
-
-
-paths = root.findall("svg:path", ns)
-icon_paths = []  # list of (lottie_path_dict, fill_color, fill_rule_str)
-for p in paths:
-    d = p.attrib["d"]
-    fill = p.attrib.get("fill", "#000000")
-    fill_rule = p.attrib.get("fill-rule", "nonzero")
-    for s in svg_path_to_lottie_shapes(d):
-        icon_paths.append((absolute_path(s), fill, fill_rule))
-
-
 # ─── 4. GROUP TRANSFORM HELPERS ──────────────────────────────────────────────
-def reveal_tr(start_frame, end_frame, ease=None):
+def reveal_tr(start_frame, end_frame, comp_cx, comp_cy, ease=None):
     """
     Animated group transform — reveals from comp center via scale + position.
     Path data must be in absolute comp coords for this to look like
@@ -111,7 +76,7 @@ def reveal_tr(start_frame, end_frame, ease=None):
         "ty": "tr",
         "a": {"a": 0, "k": [0, 0]},
         "p": {"a": 1, "k": [
-            kf(start_frame, [COMP_CX, COMP_CY], ease),
+            kf(start_frame, [comp_cx, comp_cy], ease),
             kf_final(end_frame, [0, 0]),
         ]},
         "s": {"a": 1, "k": [
@@ -129,7 +94,7 @@ def reveal_tr(start_frame, end_frame, ease=None):
 
 
 # ─── 5. GROUP BUILDERS ────────────────────────────────────────────────────────
-def make_icon_group(start, end, ease=None):
+def make_icon_group(start, end, icon_paths, comp_cx, comp_cy, ease=None):
     """The main icon group — uses all converted SVG paths."""
     color = hex_to_rgba(icon_paths[0][1]) if icon_paths else [0, 0, 0, 1]
     rule = 2 if any(r == "evenodd" for _, _, r in icon_paths) else 1
@@ -140,16 +105,17 @@ def make_icon_group(start, end, ease=None):
         "o": {"a": 0, "k": 100},
         "r": rule,
     })
-    items.append(reveal_tr(start, end, ease))
+    items.append(reveal_tr(start, end, comp_cx, comp_cy, ease))
     return {"ty": "gr", "nm": "icon", "it": items}
 
 
-def make_ring_group(start, end, radius, stroke_width=8, color_hex="#0673F9", ease=None):
+def make_ring_group(start, end, radius, comp_cx, comp_cy,
+                    stroke_width=8, color_hex="#0673F9", ease=None):
     """Concentric ring (ellipse stroke) at comp center."""
     items = [
         {
             "ty": "el",
-            "p": {"a": 0, "k": [COMP_CX, COMP_CY]},
+            "p": {"a": 0, "k": [comp_cx, comp_cy]},
             "s": {"a": 0, "k": [radius * 2, radius * 2]},
         },
         {
@@ -160,53 +126,12 @@ def make_ring_group(start, end, radius, stroke_width=8, color_hex="#0673F9", eas
             "lc": 2,
             "lj": 2,
         },
-        reveal_tr(start, end, ease),
+        reveal_tr(start, end, comp_cx, comp_cy, ease),
     ]
     return {"ty": "gr", "nm": f"ring_r{radius}", "it": items}
 
 
-# ─── 6. ASSEMBLE GROUPS ───────────────────────────────────────────────────────
-# Order in the array = z-order back-to-front.
-# Stagger from the reference file: 3-frame intervals between starts,
-# durations grow by 12 frames as elements get larger.
-groups = [
-    make_ring_group(start=9, end=60, radius=170, stroke_width=10),  # back
-    make_ring_group(start=6, end=45, radius=130, stroke_width=10),
-    make_ring_group(start=3, end=30, radius=90,  stroke_width=10),
-    make_icon_group(start=0, end=15),                                # front
-]
-
-
-# ─── 7. ASSEMBLE LAYER + COMP ─────────────────────────────────────────────────
-layer = {
-    "ddd": 0, "ind": 1, "ty": 4, "nm": "main", "sr": 1,
-    "ks": {  # layer transform stays IDENTITY
-        "o": {"a": 0, "k": 100},
-        "r": {"a": 0, "k": 0},
-        "p": {"a": 0, "k": [0, 0, 0]},
-        "a": {"a": 0, "k": [0, 0, 0]},
-        "s": {"a": 0, "k": [100, 100, 100]},
-    },
-    "ao": 0,
-    "shapes": groups,
-    "ip": 0, "op": TOTAL, "st": 0, "bm": 0,
-}
-
-lottie = {
-    "v": "5.7.4",
-    "fr": FR,
-    "ip": 0,
-    "op": TOTAL,
-    "w": COMP_W,
-    "h": COMP_H,
-    "nm": OUT_NAME,
-    "ddd": 0,
-    "assets": [],
-    "layers": [layer],
-}
-
-
-# ─── 8. VALIDATE ──────────────────────────────────────────────────────────────
+# ─── 6. VALIDATE ──────────────────────────────────────────────────────────────
 def validate(lottie_dict):
     issues = []
     if not (lottie_dict["op"] > lottie_dict["ip"] >= 0):
@@ -249,23 +174,96 @@ def validate(lottie_dict):
     return issues
 
 
-issues = validate(lottie)
-if issues:
-    print("⚠ Validation issues:")
-    for i in issues:
-        print(f"  ✗ {i}")
-    raise SystemExit(1)
+# ─── 7. MAIN ──────────────────────────────────────────────────────────────────
+def main():
+    # Parse SVG → absolute comp coordinates
+    tree = ET.parse(SVG_PATH)
+    root = tree.getroot()
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    vb = list(map(float, root.attrib["viewBox"].split()))
+    vb_w, vb_h = vb[2], vb[3]
+
+    # Scale icon to fit a chosen fraction of the comp
+    icon_fill = 0.5  # icon takes 50% of comp width
+    scale = (COMP_W * icon_fill) / vb_w
+    comp_cx, comp_cy = COMP_W / 2, COMP_H / 2
+    icon_w, icon_h = vb_w * scale, vb_h * scale
+    offset_x = comp_cx - icon_w / 2
+    offset_y = comp_cy - icon_h / 2
+
+    def absolute_path(shape):
+        """Transform converted SVG path into absolute comp coordinates."""
+        return {
+            "i": [[t[0] * scale, t[1] * scale] for t in shape["i"]],
+            "o": [[t[0] * scale, t[1] * scale] for t in shape["o"]],
+            "v": [[v[0] * scale + offset_x, v[1] * scale + offset_y] for v in shape["v"]],
+            "c": shape["c"],
+        }
+
+    icon_paths = []  # list of (lottie_path_dict, fill_color, fill_rule_str)
+    for p in root.findall("svg:path", ns):
+        d = p.attrib["d"]
+        fill = p.attrib.get("fill", "#000000")
+        fill_rule = p.attrib.get("fill-rule", "nonzero")
+        for s in svg_path_to_lottie_shapes(d):
+            icon_paths.append((absolute_path(s), fill, fill_rule))
+
+    # Assemble groups — order in the array = z-order back-to-front.
+    # Stagger: 3-frame intervals between starts, durations grow by 12 frames
+    # as elements get larger.
+    groups = [
+        make_ring_group(start=9, end=60, radius=170, comp_cx=comp_cx, comp_cy=comp_cy, stroke_width=10),
+        make_ring_group(start=6, end=45, radius=130, comp_cx=comp_cx, comp_cy=comp_cy, stroke_width=10),
+        make_ring_group(start=3, end=30, radius=90,  comp_cx=comp_cx, comp_cy=comp_cy, stroke_width=10),
+        make_icon_group(start=0, end=15, icon_paths=icon_paths, comp_cx=comp_cx, comp_cy=comp_cy),
+    ]
+
+    layer = {
+        "ddd": 0, "ind": 1, "ty": 4, "nm": "main", "sr": 1,
+        "ks": {  # layer transform stays IDENTITY
+            "o": {"a": 0, "k": 100},
+            "r": {"a": 0, "k": 0},
+            "p": {"a": 0, "k": [0, 0, 0]},
+            "a": {"a": 0, "k": [0, 0, 0]},
+            "s": {"a": 0, "k": [100, 100, 100]},
+        },
+        "ao": 0,
+        "shapes": groups,
+        "ip": 0, "op": TOTAL, "st": 0, "bm": 0,
+    }
+
+    lottie = {
+        "v": "5.7.4",
+        "fr": FR,
+        "ip": 0,
+        "op": TOTAL,
+        "w": COMP_W,
+        "h": COMP_H,
+        "nm": OUT_NAME,
+        "ddd": 0,
+        "assets": [],
+        "layers": [layer],
+    }
+
+    issues = validate(lottie)
+    if issues:
+        print("⚠ Validation issues:")
+        for i in issues:
+            print(f"  ✗ {i}")
+        raise SystemExit(1)
+
+    out_path = os.path.join(OUT_DIR, f"{OUT_NAME}.json")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(lottie, f)
+
+    size = os.path.getsize(out_path)
+    print(f"✓ {out_path}")
+    print(f"  {len(lottie['layers'])} layer(s), "
+          f"{sum(len(l['shapes']) for l in lottie['layers'])} groups, "
+          f"{lottie['op'] / lottie['fr']:.2f}s @ {lottie['fr']}fps, "
+          f"{size:,} bytes")
 
 
-# ─── 9. WRITE ─────────────────────────────────────────────────────────────────
-out_path = f"/mnt/user-data/outputs/{OUT_NAME}.json"
-os.makedirs(os.path.dirname(out_path), exist_ok=True)
-with open(out_path, "w") as f:
-    json.dump(lottie, f)
-
-size = os.path.getsize(out_path)
-print(f"✓ {out_path}")
-print(f"  {len(lottie['layers'])} layer(s), "
-      f"{sum(len(l['shapes']) for l in lottie['layers'])} groups, "
-      f"{lottie['op'] / lottie['fr']:.2f}s @ {lottie['fr']}fps, "
-      f"{size:,} bytes")
+if __name__ == "__main__":
+    main()

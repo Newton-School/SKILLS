@@ -16,7 +16,7 @@ Claude generates a valid `.json` file playable in [lottiefiles.com/preview](http
 Drop the folder into your Claude user skills directory:
 
 ```
-~/skills/svg-to-lottie/
+~/.claude/skills/svg-to-lottie/
 ```
 
 ## Layout

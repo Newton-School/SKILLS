@@ -80,7 +80,7 @@ Use when layers need: (a) masks, (b) different blend modes, (c) different `ip`/`
 
 ### 5. Build via script
 
-In `/home/claude/<animation-name>/`:
+In a working directory of your choice (e.g. `./<animation-name>/` relative to the current workspace, or `/home/claude/<animation-name>/` in the claude.ai sandbox):
 
 ```
 scripts/svg_to_lottie_paths.py    ← copy from this skill, don't rewrite
@@ -116,7 +116,12 @@ If any check fails, fix and re-run. Don't ship a broken file.
 
 ### 7. Deliver
 
-Save to `/mnt/user-data/outputs/<descriptive-name>.json`. Use kebab-case. Call `present_files`. Then in one sentence, say what you built and how to test:
+Save the JSON to a path appropriate for the environment:
+
+- **Claude Code (default):** write to the current working directory as `<descriptive-name>.json` (kebab-case) and tell the user the file path.
+- **claude.ai sandbox:** write to `/mnt/user-data/outputs/<descriptive-name>.json` and call `present_files`.
+
+Then in one sentence, say what you built and how to test:
 
 > "1.5s loop @ 60fps: bouncy pop-in entry, then continuous cone pulse, 3 staggered sound waves, glow flicker, and subtle shake. Drop into lottiefiles.com/preview to play."
 
