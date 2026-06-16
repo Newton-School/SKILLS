@@ -13,6 +13,38 @@ Converts a Framer-published website into a fully self-contained, pixel-perfect c
 - The goal is an exact, low-maintenance copy the user owns and hosts themselves on Vercel / Netlify / Cloudflare Pages / GitHub Pages / any static host.
 - **Don't** use it for a from-scratch redesign or when the user wants clean hand-written React/HTML to heavily edit — the mirror is faithful but the markup is Framer-generated and verbose.
 
+## Install
+
+This skill is distributed as a plain folder. Install it by copying the whole `design/framer-to-code/` directory — including `SKILL.md` and `scripts/` — into the place where your coding agent reads reusable skills.
+
+One-command install into Claude Code (`~/.claude/skills/framer-to-code/`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/design/framer-to-code/install.sh | bash -s -- claude
+```
+
+One-command install into Codex (`~/.codex/skills/framer-to-code/`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/design/framer-to-code/install.sh | bash -s -- codex
+```
+
+One-command install into another destination:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/design/framer-to-code/install.sh | bash -s -- "$HOME/.config/my-agent/skills/framer-to-code"
+```
+
+From a local checkout of this repository:
+
+```bash
+git clone https://github.com/Newton-School/SKILLS.git
+cd SKILLS
+./design/framer-to-code/install.sh claude   # or: codex, or a destination path
+```
+
+For other coding agents, copy `design/framer-to-code/` into the agent's skills, prompts, or reusable-context directory. If the agent doesn't support skill folders, point it at `design/framer-to-code/SKILL.md` and keep the `scripts/` directory available.
+
 ## How to use it
 
 The skill ships three tested scripts in `scripts/`. Run them with the target output directory as the last argument (let `$SKILL` be this skill's folder and `$OUT` the project folder you're building into):
