@@ -73,10 +73,10 @@ else
   tmpdir="$(mktemp -d)"
 
   curl -fsSL "$tarball_url" | tar -xz -C "$tmpdir"
-  source_dir="$(find "$tmpdir" -type d -path "*/design/framer-to-code" -print -quit)"
+  source_dir="$(find "$tmpdir" -type d -path "*/engineering/framer-to-code" -print -quit)"
 
   if [ -z "$source_dir" ]; then
-    echo "Could not find design/framer-to-code in downloaded archive." >&2
+    echo "Could not find engineering/framer-to-code in downloaded archive." >&2
     exit 1
   fi
 fi
