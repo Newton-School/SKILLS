@@ -12,7 +12,7 @@ const SHOTS = process.argv.includes('--shots');
 const PORT = process.env.PORT || 4178;
 const LOCAL = `http://localhost:${PORT}`;
 const pages = JSON.parse(fs.readFileSync(path.join(OUT, '_work/pages.json'), 'utf8'));
-const routes = pages.map(p => (p.slug === 'index' ? '/' : '/' + p.slug.replace(/-/g, '/')));
+const routes = pages.map(p => p.path || (p.slug === 'index' ? '/' : '/' + p.slug));  // real pathname carried from crawl (slug is not invertible)
 
 let chromium;
 try { ({ chromium } = await import('playwright')); }

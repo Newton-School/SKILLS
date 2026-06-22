@@ -66,7 +66,10 @@ for (const [from, to] of [['assets/images', 'images'], ['assets/videos', 'videos
 // ---- 2) re-fetch the JS bundles fresh (deterministic base for patching) ----
 const mjsUrls = Object.keys(manifest.assets).filter(u => u.endsWith('.mjs'));
 fs.mkdirSync(path.join(OUT, 'assets/framer'), { recursive: true });
-await Promise.all(mjsUrls.map(async u => { try { fs.writeFileSync(path.join(OUT, 'assets/framer', basename(u)), await fetchBuf(u)); } catch (e) { console.warn('mjs refetch fail', u, e.message); } }));
+const REFETCH_CONC = 14;  // cap concurrency like crawl.mjs — don't fire every bundle at once
+for (let i = 0; i < mjsUrls.length; i += REFETCH_CONC) {
+  await Promise.all(mjsUrls.slice(i, i + REFETCH_CONC).map(async u => { try { fs.writeFileSync(path.join(OUT, 'assets/framer', basename(u)), await fetchBuf(u)); } catch (e) { console.warn('mjs refetch fail', u, e.message); } }));
+}
 console.log('refetched', mjsUrls.length, 'bundles');
 
 // ---- 3) YouTube thumbnails (literal urls in pages) ----
@@ -96,15 +99,20 @@ function cleanHtml(t) {
   t = t.replace(/<script\b[^>]*>(?:(?!<\/script>)[\s\S])*?(?:clarity|__framer_force_showing_editorbar|events\.framer\.com)(?:(?!<\/script>)[\s\S])*?<\/script>/gi, '');
   t = t.replace(/<script\b[^>]*events\.framer\.com[^>]*>(?:[\s\S]*?<\/script>)?/gi, '');
   t = t.replace(/<link\b[^>]*(?:fonts\.googleapis\.com|fonts\.gstatic\.com)[^>]*>/gi, '');
-  t = t.replace(new RegExp(`(<a\\b[^>]*\\bhref=")https?:\\/\\/${esc(HOST)}(\\/[^"]*)"`, 'g'), (_m, a, b) => `${a}.${b}"`);
+  t = t.replace(new RegExp(`(<a\\b[^>]*\\bhref=")https?:\\/\\/${esc(HOST)}(\\/[^"]*)"`, 'g'), (_m, a, b) => `${a}${b}"`);  // root-relative (site is served from the domain root) so nested-page links resolve
   t = t.replace(/(<meta\b[^>]*\b(?:property|name)="(?:og:image|twitter:image)"[^>]*\bcontent=")(\/[^"]*)"/gi, (_m, a, b) => `${a}${ORIGIN}${b}"`);
   t = t.replace(/(<meta\b[^>]*\bcontent=")(\/[^"]*)("[^>]*\b(?:property|name)="(?:og:image|twitter:image)")/gi, (_m, a, b, c) => `${a}${ORIGIN}${b}${c}`);
   t = t.replace(/<head([^>]*)>/i, `<head$1>${SW_KILLER}`);
   return t;
 }
+// Real-path output: `/` -> index.html, `/about-us` -> about-us.html, `/blog/my-post` -> blog/my-post.html.
+const pageRoute = p => p.path || (p.slug === 'index' ? '/' : '/' + p.slug);  // fallback for older manifests
+const pageFile = p => { const r = pageRoute(p); return r === '/' ? 'index.html' : r.replace(/^\//, '') + '.html'; };
 for (const p of pageList) {
   const out = cleanHtml(fs.readFileSync(path.join(WORK, 'pages', p.slug + '.html'), 'utf8'));
-  fs.writeFileSync(path.join(OUT, p.slug + '.html'), out);
+  const dest = path.join(OUT, pageFile(p));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, out);
   const leak = (out.match(/https?:\/\/(?:framerusercontent\.com|fonts\.g(?:static|oogleapis)\.com|events\.framer\.com|i\.ytimg\.com|unpkg\.com|app\.framerstatic\.com|clarity\.ms)/g) || []).length;
   console.log(`  page ${p.slug.padEnd(20)} leak-refs=${leak}`);
 }
@@ -120,7 +128,9 @@ for (const f of fs.readdirSync(path.join(OUT, 'assets/framer'))) {
   // the runtime calls `new URL(host)` on them; a relative replacement throws "Invalid URL".
   // They are only preconnect hints / string checks and cause no request leak when left as-is.
   t = t.replace(/https:\/\/unpkg\.com\/[^"'`]*rive\.wasm/g, '/assets/lib/rive.wasm');            // rive wasm -> local
-  t = t.split('https://app.framerstatic.com/').join('/assets/fonts/');                           // Framer built-in fonts -> local
+  // Framer built-in fonts -> local. Map to the downloaded *basename* (assets are saved flat under
+  // /assets/fonts/), and only touch font files — never framerstatic .mjs editor chunks.
+  t = t.replace(/https:\/\/app\.framerstatic\.com\/[^"'`()\s]*?([A-Za-z0-9._-]+\.(?:woff2|woff|ttf|otf|eot))/g, '/assets/fonts/$1');
   t = t.split('https://i.ytimg.com/vi_webp/').join('/assets/yt/');
   t = t.split('https://i.ytimg.com/vi/').join('/assets/yt/');
   // After localizing asset URLs to root-relative paths, `new URL("/path")` would throw
@@ -142,7 +152,7 @@ const w = (rel, content) => fs.writeFileSync(path.join(OUT, rel), content);
 w('.nojekyll', '');
 w('robots.txt', `User-agent: *\nAllow: /\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
 w('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-  pageList.map(p => `<url><loc>${ORIGIN}${p.slug === 'index' ? '/' : '/' + p.slug.replace(/-/g, '/')}</loc></url>`).join('\n') + `\n</urlset>\n`);
+  pageList.map(p => `<url><loc>${ORIGIN}${pageRoute(p)}</loc></url>`).join('\n') + `\n</urlset>\n`);
 w('vercel.json', JSON.stringify({
   $schema: 'https://openapi.vercel.sh/vercel.json', framework: null, buildCommand: null,
   outputDirectory: '.', installCommand: "echo 'static site — no install/build'",

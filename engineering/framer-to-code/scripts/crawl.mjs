@@ -29,7 +29,11 @@ try { const sm = await txt(BASE + '/sitemap.xml'); urls = [...sm.matchAll(/<loc>
 urls = [...new Set(urls)];
 if (!urls.length) urls = [BASE + '/'];
 const slug = u => { const p = new URL(u).pathname.replace(/\/+$/, ''); return p === '' ? 'index' : p.replace(/^\//, '').replace(/\//g, '-'); };
-const pageList = [...new Map(urls.map(u => [slug(u), { url: u, slug: slug(u) }])).values()];
+// Keep the real pathname alongside the (flat, hyphen-joined) slug. The slug is a safe
+// filename key, but `/` <-> `-` is not invertible (paths legitimately contain hyphens),
+// so build/verify must use `path`, not a reconstructed slug, for routes and the sitemap.
+const pagePath = u => { const p = new URL(u).pathname.replace(/\/+$/, ''); return p === '' ? '/' : p; };
+const pageList = [...new Map(urls.map(u => [slug(u), { url: u, slug: slug(u), path: pagePath(u) }])).values()];
 fs.writeFileSync(path.join(WORK, 'pages.json'), JSON.stringify(pageList, null, 2));
 console.log('pages:', pageList.map(p => p.slug).join(', '));
 
