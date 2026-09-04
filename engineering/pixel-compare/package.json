@@ -1,0 +1,19 @@
+{
+  "name": "pixel-compare-skill",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Standalone runtime for the pixel-compare agent skill.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "compare": "node scripts/compare.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "pixelmatch": "5.3.0",
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0"
+  }
+}
