@@ -42,6 +42,30 @@ async function shotRange(page, rect, outPath) {
   }
 }
 
+async function shotFloating(page, outPath, matte) {
+  let prepareAttempted = false;
+  let primaryError;
+  try {
+    prepareAttempted = true;
+    await page.evaluate((background) => window.__pcPrepFloating(background), matte);
+    await page.waitForTimeout(120);
+    const buf = await page.screenshot({ animations: 'disabled' });
+    writeFileSync(outPath, buf);
+    return buf;
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    if (prepareAttempted) {
+      try {
+        await page.evaluate(() => window.__pcRestoreFloating());
+      } catch (restoreError) {
+        if (!primaryError) throw restoreError;
+      }
+    }
+  }
+}
+
 function crop(source, width, height) {
   if (source.width === width && source.height === height) return source;
   const output = new PNG({ width, height });
@@ -120,6 +144,62 @@ function montage(aPng, bPng, diffPng) {
     x += png.width + separator;
   }
   return output;
+}
+
+function floatingVariant(bufA, bufB, dir, name, matte) {
+  let a = PNG.sync.read(bufA);
+  let b = PNG.sync.read(bufB);
+  const width = Math.min(a.width, b.width);
+  const height = Math.min(a.height, b.height);
+  a = crop(a, width, height);
+  b = crop(b, width, height);
+
+  const diff = new PNG({ width, height });
+  const diffPixels = pixelmatch(a.data, b.data, diff.data, width, height, {
+    threshold: 0.12,
+    includeAA: false,
+    alpha: 0.4,
+  });
+  writeFileSync(join(dir, `diff-${name}.png`), PNG.sync.write(diff));
+  writeFileSync(join(dir, `montage-${name}.png`), PNG.sync.write(montage(a, b, diff)));
+  return { name, matte, a, b, diff, width, height, diffPixels };
+}
+
+// Fixed chrome is intentionally omitted from section captures. Compare it on
+// both light and dark mattes so transparent content cannot disappear by
+// matching a single background color.
+async function diffFloatingUI(pageA, pageB, outDir, dpr) {
+  const dir = join(outDir, 'floating-ui');
+  mkdirSync(dir, { recursive: true });
+  const [lightA, lightB] = await Promise.all([
+    shotFloating(pageA, join(dir, 'a-light.png'), '#ffffff'),
+    shotFloating(pageB, join(dir, 'b-light.png'), '#ffffff'),
+  ]);
+  const [darkA, darkB] = await Promise.all([
+    shotFloating(pageA, join(dir, 'a-dark.png'), '#000000'),
+    shotFloating(pageB, join(dir, 'b-dark.png'), '#000000'),
+  ]);
+  const light = floatingVariant(lightA, lightB, dir, 'light', '#ffffff');
+  const dark = floatingVariant(darkA, darkB, dir, 'dark', '#000000');
+  const primary = dark.diffPixels > light.diffPixels ? dark : light;
+
+  writeFileSync(join(dir, 'a.png'), PNG.sync.write(primary.a));
+  writeFileSync(join(dir, 'b.png'), PNG.sync.write(primary.b));
+  writeFileSync(join(dir, 'diff.png'), PNG.sync.write(primary.diff));
+  writeFileSync(join(dir, 'montage.png'), PNG.sync.write(montage(primary.a, primary.b, primary.diff)));
+  const ratio = primary.diffPixels / (primary.width * primary.height);
+
+  return {
+    w: Math.round(primary.width / dpr),
+    h: Math.round(primary.height / dpr),
+    matte: primary.name,
+    diffPixels: primary.diffPixels,
+    diffRatio: Math.round(ratio * 1000000) / 1000000,
+    variants: {
+      light: { diffPixels: light.diffPixels, diffRatio: Math.round((light.diffPixels / (light.width * light.height)) * 1000000) / 1000000 },
+      dark: { diffPixels: dark.diffPixels, diffRatio: Math.round((dark.diffPixels / (dark.width * dark.height)) * 1000000) / 1000000 },
+    },
+  };
 }
 
 // Rank inventory elements under a cluster by intersection over union.
@@ -230,6 +310,7 @@ async function diffSection(pageA, pageB, secA, secB, key, outDir, dpr) {
 
 module.exports = {
   diffSection,
+  diffFloatingUI,
   shotRange,
   MAX_CAPTURE_HEIGHT_CSS_PX,
   _clustersFromMask: clustersFromMask,

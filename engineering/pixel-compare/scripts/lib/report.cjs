@@ -75,7 +75,12 @@ function summaryMd(data, notes) {
     }
 
     if (result.floats?.findings?.length) {
-      out.push(`### Floating/fixed UI (${vp}px)`);
+      const floatShot = result.floats.shot;
+      const floatStatus = floatShot?.error ? 'ERROR' : 'DIFF';
+      out.push(`### Fixed/sticky UI (${vp}px) — ${floatStatus}`);
+      if (Number.isFinite(floatShot?.diffRatio)) {
+        out.push(`- Strongest isolated ${floatShot.matte ? `${md(floatShot.matte)}-matte ` : ''}capture: ${pct(floatShot.diffRatio)} (${floatShot.diffPixels} pixels) — [montage](./${vp}/floating-ui/montage.png)`);
+      }
       for (const finding of result.floats.findings) out.push(`- [${md(finding.sev)}] ${md(finding.msg)}`);
       out.push('');
     }
@@ -131,13 +136,18 @@ function indexHtml(data, notes) {
       ...result.onlyB.map((section) => ({ ...section, missingOn: 'A' })),
     ];
     const floats = result.floats?.findings || [];
+    const floatShot = result.floats?.shot;
+    const floatImage = Number.isFinite(floatShot?.diffRatio)
+      ? `<a href="./${vp}/floating-ui/montage.png" target="_blank"><img loading="lazy" src="./${vp}/floating-ui/montage.png" alt="fixed and sticky UI montage"></a>
+        <p class="mono dim">strongest isolated ${floatShot.matte ? `${esc(floatShot.matte)}-matte ` : ''}capture · ${pct(floatShot.diffRatio)} (${floatShot.diffPixels} pixels) · left: A · middle: B · right: diff</p>`
+      : (floatShot?.error ? `<div class="capture-error"><strong>Capture failed</strong><br>${esc(floatShot.error)}</div>` : '');
     return `
     <section>
       <h2>${vp}px ${vp < 700 ? '(mobile)' : '(desktop)'}</h2>
       ${unpaired.map((section) => sectionCard(section, vp, labels, notes)).join('')}
       ${ranked.map((section) => sectionCard(section, vp, labels, notes)).join('')}
-      ${floats.length ? `<details class="card" open><summary><span class="chip" style="background:#7c3aed">FLOATING UI</span><strong>fixed-position elements</strong></summary>
-        <ul class="findings">${floats.map((finding) => `<li><span class="sev" style="color:${SEV_COLOR[finding.sev]}">[${finding.sev}]</span> ${esc(finding.msg)}</li>`).join('')}</ul></details>` : ''}
+      ${floats.length ? `<details class="card" open><summary><span class="chip" style="background:#7c3aed">FLOATING UI DIFF</span><strong>fixed/sticky elements</strong></summary>
+        ${floatImage}<ul class="findings">${floats.map((finding) => `<li><span class="sev" style="color:${SEV_COLOR[finding.sev]}">[${finding.sev}]</span> ${esc(finding.msg)}</li>`).join('')}</ul></details>` : ''}
     </section>`;
   }).join('');
 

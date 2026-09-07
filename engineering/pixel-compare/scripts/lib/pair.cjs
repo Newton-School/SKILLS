@@ -165,8 +165,8 @@ function similarity(a, b) {
   return parts.reduce((sum, [partWeight, score]) => sum + partWeight * score, 0) / weight;
 }
 
-// Loosely align floating UI by its text/class fingerprint and tag. Findings
-// focus on elements present on only one page.
+// Loosely align floating UI by its semantic fingerprint and coarse geometry.
+// Paired elements are compared in detail by floatFindings.
 function alignFloats(floatsA, floatsB) {
   const usedB = new Set();
   const pairs = [];
@@ -176,14 +176,18 @@ function alignFloats(floatsA, floatsB) {
     let bestScore = 0;
     floatsB.forEach((floatB, index) => {
       if (usedB.has(index)) return;
-      let score = jaccard(tokens(`${floatA.text} ${floatA.cls}`), tokens(`${floatB.text} ${floatB.cls}`)) ?? 0;
+      let score = jaccard(tokens(`${floatA.text} ${floatA.cls} ${floatA.role || ''}`), tokens(`${floatB.text} ${floatB.cls} ${floatB.role || ''}`)) ?? 0;
       if (floatA.tag === floatB.tag) score += 0.1;
+      if (floatA.kind && floatA.kind === floatB.kind) score += 0.1;
       if (floatA.hasImg && floatB.hasImg) score += 0.1;
       const widthScale = Math.max(1, floatA.rect.w, floatB.rect.w);
       const heightScale = Math.max(1, floatA.rect.h, floatB.rect.h);
       const similarlySized = Math.abs(floatA.rect.w - floatB.rect.w) / widthScale <= 0.1
         && Math.abs(floatA.rect.h - floatB.rect.h) / heightScale <= 0.1;
       if (similarlySized) score += 0.15;
+      if (Number.isFinite(floatA.rect.x) && Number.isFinite(floatA.rect.y)
+          && Math.abs(floatA.rect.x - floatB.rect.x) <= 8
+          && Math.abs(floatA.rect.y - floatB.rect.y) <= 8) score += 0.1;
       if (score > bestScore) {
         bestScore = score;
         best = index;

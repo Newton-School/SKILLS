@@ -6,7 +6,7 @@ const { join } = require('node:path');
 const { tmpdir } = require('node:os');
 const { openAndSettle } = require('./settle.cjs');
 const { matchAnchors, buildBoundaries, fallbackBoundaries, ensureNonEmpty, similarity, alignFloats } = require('./pair.cjs');
-const { diffSection } = require('./capture.cjs');
+const { diffSection, diffFloatingUI } = require('./capture.cjs');
 const { sectionFindings, floatFindings } = require('./facts.cjs');
 const { writeReport, statusOf } = require('./report.cjs');
 
@@ -65,6 +65,13 @@ async function run({ playwright, config = {} }) {
         const oa = await pa.page.evaluate(() => window.__pcOutline());
         const ob = await pb.page.evaluate(() => window.__pcOutline());
         console.log(`  leaves: A=${oa.leaves.length} B=${ob.leaves.length} · headings: A=${oa.headings.length} B=${ob.headings.length} · floats: A=${oa.floats.length} B=${ob.floats.length}`);
+
+        let floatShot;
+        try {
+          floatShot = await diffFloatingUI(pa.page, pb.page, outVp, pa.dpr);
+        } catch (error) {
+          floatShot = { error: String(error.message || error).slice(0, 200) };
+        }
 
         const anchors = matchAnchors(oa.headings, ob.headings);
         let sliceMode = 'anchors';
@@ -130,7 +137,11 @@ async function run({ playwright, config = {} }) {
         }
 
         const floatAlignment = alignFloats(oa.floats, ob.floats);
-        result.floats = { pairs: floatAlignment.pairs.length, findings: floatFindings(floatAlignment, labels) };
+        result.floats = {
+          pairs: floatAlignment.pairs.length,
+          shot: floatShot,
+          findings: floatFindings(floatAlignment, labels, floatShot),
+        };
         data.results[vp] = result;
         // Persist completed viewports as checkpoints so a later navigation or
         // capture failure does not discard all earlier results.

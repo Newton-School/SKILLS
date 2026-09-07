@@ -21,6 +21,10 @@ const INJECT = `(() => {
     const r = e.getBoundingClientRect();
     return { x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) };
   };
+  const viewportRect = (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+  };
 
   const cctx = document.createElement('canvas').getContext('2d');
   const normColor = (v) => {
@@ -64,6 +68,81 @@ const INJECT = `(() => {
     };
   };
 
+  const fixedStyle = (element) => {
+    const cs = getComputedStyle(element);
+    const keep = (value) => String(value || '').slice(0, 240);
+    return {
+      color: normColor(cs.color),
+      bg: normColor(cs.backgroundColor),
+      bgImg: cs.backgroundImage === 'none' ? 'none' : 'image',
+      border: [cs.borderTopWidth, cs.borderTopStyle, normColor(cs.borderTopColor), cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].join(' '),
+      radius: cs.borderRadius,
+      shadow: keep(cs.boxShadow),
+      opacity: cs.opacity,
+      transform: keep(cs.transform),
+      font: keep([cs.fontFamily, cs.fontSize, cs.fontWeight, cs.lineHeight].join(' ')),
+      fill: normColor(cs.fill),
+      stroke: normColor(cs.stroke),
+      z: cs.zIndex,
+    };
+  };
+
+  const fixedMedia = (element) => [
+    ...(element.matches && element.matches('img,svg') ? [element] : []),
+    ...element.querySelectorAll('img,svg'),
+  ].slice(0, 8).map((media) => {
+    if (media.tagName.toLowerCase() === 'img') {
+      return ['img', media.naturalWidth, media.naturalHeight, norm(media.getAttribute('alt'))].join('|').slice(0, 500);
+    }
+    const attrs = ['d', 'points', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'transform', 'href', 'xlink:href'];
+    const shapes = [media, ...media.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon,text,use,image')].slice(0, 40).map((shape) => {
+      const values = attrs.map((name) => {
+        const value = shape.getAttribute(name);
+        return value === null ? '' : name + '=' + value;
+      }).filter(Boolean);
+      return [shape.tagName.toLowerCase(), ...values, norm(shape.textContent).slice(0, 80)].join(',');
+    });
+    return ['svg', media.getAttribute('viewBox') || '', ...shapes].join('|').slice(0, 500);
+  });
+
+  const fixedVisual = (root) => {
+    const rootRect = viewportRect(root);
+    const out = [];
+    for (const element of [root, ...root.querySelectorAll('*')]) {
+      if (out.length >= 160 || !vis(element)) continue;
+      const cs = getComputedStyle(element);
+      const rect = viewportRect(element);
+      const directText = norm([...element.childNodes].filter((node) => node.nodeType === 3).map((node) => node.textContent).join(' ')).slice(0, 100);
+      const ownMedia = element.matches && element.matches('img,svg') ? fixedMedia(element).slice(0, 1) : [];
+      const before = getComputedStyle(element, '::before');
+      const after = getComputedStyle(element, '::after');
+      const pseudo = [before, after].map((style) => ({
+        content: norm(style.content),
+        color: normColor(style.color),
+        bg: normColor(style.backgroundColor),
+        bgImg: style.backgroundImage === 'none' ? 'none' : 'image',
+      })).filter((style) => style.content && style.content !== 'none' && style.content !== 'normal');
+      const decorated = cs.backgroundImage !== 'none'
+        || (cs.backgroundColor && cs.backgroundColor !== 'transparent' && !TRANSPARENT.test(cs.backgroundColor))
+        || cs.boxShadow !== 'none'
+        || parseFloat(cs.borderTopWidth) > 0
+        || !!element.ownerSVGElement;
+      if (!directText && !ownMedia.length && !pseudo.length && !decorated && !element.matches('button,input,select,textarea')) continue;
+      out.push({
+        tag: element.tagName.toLowerCase(),
+        x: rect.x - rootRect.x,
+        y: rect.y - rootRect.y,
+        w: rect.w,
+        h: rect.h,
+        text: directText,
+        media: ownMedia,
+        pseudo,
+        style: fixedStyle(element),
+      });
+    }
+    return out;
+  };
+
   window.__pcOutline = () => {
     const leaves = [];
     const maxHeight = Math.max(1400, innerHeight * 1.6);
@@ -96,12 +175,10 @@ const INJECT = `(() => {
     };
     explode(document.body, 0);
 
-    const floats = [];
     const flow = [];
     for (const element of leaves) {
       const item = { el: element, r: docRect(element) };
-      if (getComputedStyle(element).position === 'fixed') floats.push(item);
-      else flow.push(item);
+      if (getComputedStyle(element).position !== 'fixed') flow.push(item);
     }
     flow.sort((a, b) => a.r.y - b.r.y || a.r.x - b.r.x);
     window.__pcFlow = flow;
@@ -110,9 +187,17 @@ const INJECT = `(() => {
     for (const element of document.querySelectorAll('*')) {
       const position = getComputedStyle(element).position;
       if (position === 'fixed' || position === 'sticky') {
-        window.__pcFixedInfo.push({ el: element, r: docRect(element), kind: position });
+        window.__pcFixedInfo.push({ el: element, r: docRect(element), kind: position, visible: vis(element) });
       }
     }
+    const visibleFixed = window.__pcFixedInfo.filter((item) => item.visible);
+    const visibleFixedElements = new Set(visibleFixed.map((item) => item.el));
+    window.__pcFixedRoots = visibleFixed.filter((item) => {
+      for (let parent = item.el.parentElement; parent; parent = parent.parentElement) {
+        if (visibleFixedElements.has(parent)) return false;
+      }
+      return true;
+    });
 
     const headings = [];
     flow.forEach((item, leafIdx) => {
@@ -127,12 +212,19 @@ const INJECT = `(() => {
       }
     });
 
-    const floatOut = floats.filter((item) => vis(item.el)).map((item) => ({
-      rect: item.r,
+    // Keep one entry per positioned root, with visible subtree evidence. This
+    // includes nested fixed controls without producing duplicate findings.
+    const floatOut = window.__pcFixedRoots.map((item) => ({
+      rect: viewportRect(item.el),
+      kind: item.kind,
       text: norm(item.el.innerText).slice(0, 100),
       cls: (typeof item.el.className === 'string' ? item.el.className : '').slice(0, 80),
       tag: item.el.tagName.toLowerCase(),
+      role: norm(item.el.getAttribute('role') || item.el.getAttribute('aria-label')).slice(0, 80),
       hasImg: !!item.el.querySelector('img,svg'),
+      media: fixedMedia(item.el),
+      style: fixedStyle(item.el),
+      visual: fixedVisual(item.el),
     }));
 
     return {
@@ -276,6 +368,55 @@ const INJECT = `(() => {
       }
     }
     return true;
+  };
+
+  // Capture overlay UI against a stable white canvas. Section screenshots hide
+  // fixed chrome to avoid repeating it in every slice, so this separate state
+  // preserves the rendered pixels of fixed/sticky roots and all descendants.
+  window.__pcPrepFloating = (requestedMatte) => {
+    window.scrollTo(0, 0);
+    const roots = window.__pcFixedRoots || [];
+    const matte = requestedMatte === '#000000' ? '#000000' : '#ffffff';
+
+    const marked = [];
+    for (const { el } of roots) {
+      for (const element of [el, ...el.querySelectorAll('*')]) {
+        if (getComputedStyle(element).visibility !== 'visible') continue;
+        marked.push([element, element.getAttribute('data-pc-floating-visible')]);
+        element.setAttribute('data-pc-floating-visible', '');
+      }
+    }
+    const textNodes = [];
+    for (const container of [document.documentElement, document.body]) {
+      for (const node of container.childNodes) {
+        if (node.nodeType !== 3 || !node.textContent) continue;
+        textNodes.push([node, node.textContent]);
+        node.textContent = '';
+      }
+    }
+    const style = document.createElement('style');
+    style.setAttribute('data-pc-floating-capture', '');
+    style.textContent = [
+      'html, body { background: ' + matte + ' !important; background-image: none !important; border: 0 !important; box-shadow: none !important; outline: 0 !important; }',
+      'body * { visibility: hidden !important; }',
+      'html::before, html::after, body::before, body::after { content: none !important; display: none !important; }',
+      '[data-pc-floating-visible] { visibility: visible !important; }',
+    ].join('\\n');
+    document.documentElement.appendChild(style);
+    window.__pcFloatingCapture = { marked, style, textNodes };
+    return roots.length;
+  };
+
+  window.__pcRestoreFloating = () => {
+    const capture = window.__pcFloatingCapture;
+    if (!capture) return;
+    capture.style.remove();
+    for (const [node, text] of capture.textNodes) node.textContent = text;
+    for (const [element, previous] of capture.marked) {
+      if (previous === null) element.removeAttribute('data-pc-floating-visible');
+      else element.setAttribute('data-pc-floating-visible', previous);
+    }
+    window.__pcFloatingCapture = null;
   };
 
   window.__pcRestore = () => {

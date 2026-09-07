@@ -63,3 +63,18 @@ test('matching floating icon controls can align without text or class names', ()
   assert.deepEqual(result.onlyA, []);
   assert.deepEqual(result.onlyB, []);
 });
+
+test('fixed wrapper roots align from position kind and coarse geometry', () => {
+  const wrapper = {
+    kind: 'fixed', tag: 'div', text: '', cls: '', role: '', hasImg: false,
+    rect: { x: 300, y: 700, w: 72, h: 72 },
+  };
+  const result = alignFloats([wrapper], [{
+    ...wrapper,
+    rect: { x: 304, y: 696, w: 74, h: 72 },
+  }]);
+
+  assert.equal(result.pairs.length, 1);
+  assert.deepEqual(result.onlyA, []);
+  assert.deepEqual(result.onlyB, []);
+});

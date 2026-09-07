@@ -68,7 +68,7 @@ For each viewport, the engine:
 1. Loads both pages, progressively scrolls through lazy content, waits for fonts within a bounded interval, disables CSS animation and transitions, and pauses videos.
 2. Detects section-sized content blocks and inventories headings, text, links, images, backgrounds, dynamic regions, and fixed UI.
 3. Matches headings across the two pages and cuts both documents at corresponding content anchors. If no shared heading anchors can be matched, it reports a proportional-slicing fallback.
-4. Captures each paired slice, compares it with `pixelmatch`, creates A/B/diff montages, and attributes concentrated diff bands to nearby elements.
+4. Captures each paired slice plus an isolated fixed/sticky-UI viewport, compares them with `pixelmatch`, creates A/B/diff montages, and attributes concentrated diff bands to nearby elements.
 5. Produces deterministic findings for copy, heading typography, geometry, backgrounds, images, CTAs, fixed UI, and time-varying content.
 6. Re-captures substantially different slices to estimate whether either page is changing on its own.
 
@@ -84,6 +84,8 @@ SUMMARY.md          ranked, terminal-readable summary
 data.json           machine-readable results
 notes.json          optional human-authored interpretation
 <viewport>/<slice>/ a.png, b.png, diff.png, montage.png
+<viewport>/floating-ui/ a.png, b.png, diff.png, montage.png
+<viewport>/floating-ui/ a-{light,dark}.png, b-{light,dark}.png, diff-{light,dark}.png, montage-{light,dark}.png
 ```
 
 Reports can contain page text and screenshots. Store them outside the skill directory and do not commit sensitive output.

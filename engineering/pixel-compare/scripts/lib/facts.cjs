@@ -159,9 +159,66 @@ function sectionFindings(secA, secB, labels, shot) {
   return findings;
 }
 
-function floatFindings(floatAlignment, labels) {
+function floatFindings(floatAlignment, labels, shot = null) {
   const findings = [];
-  const describe = (float) => `${float.tag}${float.cls ? `.${float.cls.split(/\s+/)[0]}` : ''}${float.text ? ` "${float.text.slice(0, 50)}"` : ''}${float.hasImg ? ' [icon]' : ''} @${float.rect.w}x${float.rect.h}`;
+  const describe = (float) => `${float.kind || 'fixed'} ${float.tag}${float.cls ? `.${float.cls.split(/\s+/)[0]}` : ''}${float.text ? ` "${float.text.slice(0, 50)}"` : ''}${float.hasImg ? ' [icon]' : ''} @(${float.rect.x ?? '?'},${float.rect.y ?? '?'}) ${float.rect.w}x${float.rect.h}`;
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const changedStyleKeys = (a, b) => {
+    const left = a || {};
+    const right = b || {};
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].filter((key) => left[key] !== right[key]);
+  };
+  const geometryDiffers = (a, b, tolerance = 2) => ['x', 'y', 'w', 'h'].some((key) => {
+    if (!Number.isFinite(a?.[key]) || !Number.isFinite(b?.[key])) return a?.[key] !== b?.[key];
+    return Math.abs(a[key] - b[key]) > tolerance;
+  });
+
+  if (shot?.error) {
+    findings.push({ sev: 'major', type: 'floating-ui-capture', msg: `Fixed/sticky UI capture failed: ${shot.error}` });
+  } else if ((shot?.diffPixels || 0) > 0) {
+    findings.push({
+      sev: 'major',
+      type: 'floating-ui-pixels',
+      msg: `Fixed/sticky UI renders differently: ${shot.diffPixels} pixels differ in the strongest isolated ${shot.matte ? `${shot.matte}-matte ` : ''}capture (${((shot.diffRatio || 0) * 100).toFixed(3)}%)`,
+    });
+  }
+
+  for (const pair of floatAlignment.pairs) {
+    const changes = [];
+    if (pair.a.kind !== pair.b.kind) changes.push(`position ${pair.a.kind || '?'} vs ${pair.b.kind || '?'}`);
+    if (geometryDiffers(pair.a.rect, pair.b.rect)) {
+      changes.push(`geometry (${pair.a.rect.x},${pair.a.rect.y}) ${pair.a.rect.w}x${pair.a.rect.h} vs (${pair.b.rect.x},${pair.b.rect.y}) ${pair.b.rect.w}x${pair.b.rect.h}`);
+    }
+    if (norm(pair.a.text).toLowerCase() !== norm(pair.b.text).toLowerCase()) changes.push('text');
+    if (norm(pair.a.role).toLowerCase() !== norm(pair.b.role).toLowerCase()) changes.push('role/accessible label');
+    if (!same(pair.a.media, pair.b.media)) changes.push('image/SVG content');
+    const rootStyles = changedStyleKeys(pair.a.style, pair.b.style);
+    if (rootStyles.length) changes.push(`root style (${rootStyles.slice(0, 5).join(', ')})`);
+
+    const visualA = pair.a.visual || [];
+    const visualB = pair.b.visual || [];
+    let changedVisuals = Math.abs(visualA.length - visualB.length);
+    for (let index = 0; index < Math.min(visualA.length, visualB.length); index++) {
+      const a = visualA[index];
+      const b = visualB[index];
+      if (a.tag !== b.tag
+          || geometryDiffers(a, b)
+          || norm(a.text).toLowerCase() !== norm(b.text).toLowerCase()
+          || !same(a.media, b.media)
+          || !same(a.pseudo, b.pseudo)
+          || changedStyleKeys(a.style, b.style).length) changedVisuals += 1;
+    }
+    if (changedVisuals) changes.push(`${changedVisuals} painted subtree record${changedVisuals === 1 ? '' : 's'}`);
+
+    if (changes.length) {
+      findings.push({
+        sev: 'major',
+        type: 'floating-ui',
+        msg: `Fixed/sticky element differs (${labels.a} vs ${labels.b}): ${describe(pair.a)} — ${changes.join('; ')}`,
+      });
+    }
+  }
+
   for (const float of floatAlignment.onlyA) findings.push({ sev: 'major', type: 'floating-ui', msg: `Fixed/floating element only on ${labels.a}: ${describe(float)}` });
   for (const float of floatAlignment.onlyB) findings.push({ sev: 'major', type: 'floating-ui', msg: `Fixed/floating element only on ${labels.b}: ${describe(float)}` });
   return findings;
