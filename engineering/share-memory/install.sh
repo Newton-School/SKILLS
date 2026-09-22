@@ -8,11 +8,11 @@ Usage: install.sh <claude|codex|destination-path>
 Examples:
   install.sh claude
   install.sh codex
-  install.sh "$HOME/.config/my-agent/skills/memory-share"
+  install.sh "$HOME/.config/my-agent/skills/share-memory"
 
 Environment:
-  MEMORY_SHARE_SKILL_REF          Git ref to download when run remotely. Default: master
-  MEMORY_SHARE_SKILL_TARBALL_URL  Override the GitHub tarball URL.
+  SHARE_MEMORY_SKILL_REF          Git ref to download when run remotely. Default: master
+  SHARE_MEMORY_SKILL_TARBALL_URL  Override the GitHub tarball URL.
 EOF
 }
 
@@ -28,10 +28,10 @@ fi
 
 case "$1" in
   claude)
-    target="${CLAUDE_HOME:-$HOME/.claude}/skills/memory-share"
+    target="${CLAUDE_HOME:-$HOME/.claude}/skills/share-memory"
     ;;
   codex)
-    target="${CODEX_HOME:-$HOME/.codex}/skills/memory-share"
+    target="${CODEX_HOME:-$HOME/.codex}/skills/share-memory"
     ;;
   *)
     target="$1"
@@ -68,15 +68,15 @@ else
     exit 1
   }
 
-  ref="${MEMORY_SHARE_SKILL_REF:-master}"
-  tarball_url="${MEMORY_SHARE_SKILL_TARBALL_URL:-https://codeload.github.com/Newton-School/SKILLS/tar.gz/$ref}"
+  ref="${SHARE_MEMORY_SKILL_REF:-master}"
+  tarball_url="${SHARE_MEMORY_SKILL_TARBALL_URL:-https://codeload.github.com/Newton-School/SKILLS/tar.gz/$ref}"
   tmpdir="$(mktemp -d)"
 
   curl -fsSL "$tarball_url" | tar -xz -C "$tmpdir"
-  source_dir="$(find "$tmpdir" -type d -path "*/engineering/memory-share" -print -quit)"
+  source_dir="$(find "$tmpdir" -type d -path "*/engineering/share-memory" -print -quit)"
 
   if [ -z "$source_dir" ]; then
-    echo "Could not find engineering/memory-share in downloaded archive." >&2
+    echo "Could not find engineering/share-memory in downloaded archive." >&2
     exit 1
   fi
 fi
@@ -85,4 +85,4 @@ mkdir -p "$(dirname -- "$target")"
 rm -rf "$target"
 cp -R "$source_dir" "$target"
 
-echo "Installed memory-share skill to $target"
+echo "Installed share-memory skill to $target"

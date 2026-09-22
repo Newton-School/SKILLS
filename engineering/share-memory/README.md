@@ -1,11 +1,11 @@
-# Memory Share
+# Share Memory
 
 **Domain:** engineering
 **Author:** @DipeshRajoria007
 
 ## What it does
 
-Memory Share moves Claude Code's per-project memory between machines and teammates. It gathers a repo's memory from every clone and worktree on the machine, strips personal entries and credentials, flags facts that are only true locally, and writes the result into a visible `context/` folder at the repo root that the recipient can import in one command.
+Share Memory moves Claude Code's per-project memory between machines and teammates. It gathers a repo's memory from every clone and worktree on the machine, strips personal entries and credentials, flags facts that are only true locally, and writes the result into a visible `context/` folder at the repo root that the recipient can import in one command.
 
 It also names the entries that shouldn't be private memory at all — team-wide conventions that belong in the repo's own agent instructions via a pull request.
 
@@ -18,24 +18,24 @@ It also names the entries that shouldn't be private memory at all — team-wide 
 
 ## Install
 
-This skill is distributed as a plain folder. Install it by copying the whole `engineering/memory-share/` directory, including `SKILL.md`, into the place where your coding agent reads reusable skills or instructions.
+This skill is distributed as a plain folder. Install it by copying the whole `engineering/share-memory/` directory, including `SKILL.md`, into the place where your coding agent reads reusable skills or instructions.
 
 One-command install for Claude-style skill folders:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/memory-share/install.sh | bash -s -- claude
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/share-memory/install.sh | bash -s -- claude
 ```
 
 One-command install for Codex-style skill folders:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/memory-share/install.sh | bash -s -- codex
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/share-memory/install.sh | bash -s -- codex
 ```
 
 One-command install for another destination:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/memory-share/install.sh | bash -s -- "$HOME/.config/my-agent/skills/memory-share"
+curl -fsSL https://raw.githubusercontent.com/Newton-School/SKILLS/master/engineering/share-memory/install.sh | bash -s -- "$HOME/.config/my-agent/skills/share-memory"
 ```
 
 From a local checkout of this repository:
@@ -43,10 +43,10 @@ From a local checkout of this repository:
 ```bash
 git clone https://github.com/Newton-School/SKILLS.git
 cd SKILLS
-./engineering/memory-share/install.sh claude
+./engineering/share-memory/install.sh claude
 ```
 
-For other coding agents, point the agent at `engineering/memory-share/SKILL.md`.
+For other coding agents, point the agent at `engineering/share-memory/SKILL.md`.
 
 ## How to use it
 
@@ -55,7 +55,7 @@ The skill has three modes. Run them from the repo whose memory you care about.
 **Export** — collect this repo's memory into `context/`:
 
 ```text
-/memory-share export
+/share-memory export
 ```
 
 It reports which clones and worktrees it found, shows you a manifest of what was included, excluded, redacted, and flagged, and writes everything to `<repo-root>/context/`. Hand that folder to your teammate.
@@ -63,13 +63,13 @@ It reports which clones and worktrees it found, shows you a manifest of what was
 **Import** — merge a bundle someone gave you:
 
 ```text
-/memory-share import
+/share-memory import
 ```
 
 With no argument it looks for a bundle in the cwd, then `./context/`, then `<repo-root>/context/` — so dropping the folder at your repo root is enough. You can also pass a path explicitly:
 
 ```text
-/memory-share import ~/Downloads/api-memory-bundle
+/share-memory import ~/Downloads/api-memory-bundle
 ```
 
 Import never overwrites memory you already have; same-name entries that differ are reported as conflicts with your local version kept.
@@ -77,7 +77,7 @@ Import never overwrites memory you already have; same-name entries that differ a
 **Consolidate** — merge your own scattered memory into your main checkout:
 
 ```text
-/memory-share consolidate
+/share-memory consolidate
 ```
 
 Useful when you've been working across several clones or worktrees of one repo. Nothing leaves the machine, and the secondary memory directories are left in place.

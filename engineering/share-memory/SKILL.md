@@ -1,15 +1,15 @@
 ---
-name: memory-share
+name: share-memory
 description: Export a curated, redacted bundle of a repo's Claude memory into a visible ./context folder to share with teammates — aggregating across all clones and worktrees of that repo — import a teammate's bundle, or consolidate your own scattered memory into one place. Use when the user wants to export/share Claude memory, import a memory bundle, or merge memory scattered across multiple checkouts/worktrees.
 ---
 
-# memory-share
+# share-memory
 
 Share Claude Code per-project memory between teammates safely. Three modes:
 
-- `/memory-share` or `/memory-share export` — gather this repo's memory from **every** clone/worktree on this machine, curate, and write it to `context/`.
-- `/memory-share import [path]` — merge a bundle into local memory for this project. Path optional (see resolution order below).
-- `/memory-share consolidate` — merge your own scattered memory (from extra clones, worktrees, review checkouts) into the main checkout's memory dir. No sharing involved.
+- `/share-memory` or `/share-memory export` — gather this repo's memory from **every** clone/worktree on this machine, curate, and write it to `context/`.
+- `/share-memory import [path]` — merge a bundle into local memory for this project. Path optional (see resolution order below).
+- `/share-memory consolidate` — merge your own scattered memory (from extra clones, worktrees, review checkouts) into the main checkout's memory dir. No sharing involved.
 
 ## Where collected context lives
 
@@ -61,7 +61,7 @@ Report the discovery result before proceeding: which folders were found, how man
 4. **Write the bundle** to `<repo-root>/context/` per the layout above:
    - The curated memory files (SHARE + FLAG + UPSTREAM, with redactions applied). Keep original filenames and frontmatter.
    - `MANIFEST.md`, starting with an `Exported-by: <user> @ <hostname> on <YYYY-MM-DD>` line plus the repo identity, then sections: **Sources** (each folder discovered and files contributed), **Included** (one line per file: name — description — source folder), **Excluded** (name + one-word reason: personal / secret), **Redactions made**, **Merge conflicts** (same-name files that differed, which version won), **Unverified sources** (if any), **Upstream candidates** (with a one-line "why it generalizes").
-   - `IMPORT.md` telling the recipient to drop the folder at their repo root and run `/memory-share import` from there.
+   - `IMPORT.md` telling the recipient to drop the folder at their repo root and run `/share-memory import` from there.
 
 5. **Show the user the manifest and the folder path.** Sharing is distribution — the user must see exactly what was collected. Since the folder lives in their repo and is git-ignored, writing it needs no separate approval gate; but do not send it anywhere (Slack, email, upload) unless the user explicitly asks in this session.
 
